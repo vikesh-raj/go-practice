@@ -38,6 +38,11 @@ func (a *Application) StartServer(port int) error {
 func (a *Application) addRoutes() {
 	a.router = mux.NewRouter()
 	a.router.HandleFunc("/", a.handleIndex).Methods("GET")
+	a.router.HandleFunc("/view", a.handleView).Methods("GET")
+	a.router.HandleFunc("/add", a.handleAdd).Methods("GET")
+	a.router.HandleFunc("/add", a.handleAddPost).Methods("POST")
+	a.router.HandleFunc("/settle", a.handleSettle).Methods("GET")
+	a.router.HandleFunc("/settle", a.handleSettlePost).Methods("POST")
 	a.router.HandleFunc("/readiness", a.handleReady).Methods("GET")
 	a.router.HandleFunc("/liveness", a.handleReady).Methods("GET")
 }
