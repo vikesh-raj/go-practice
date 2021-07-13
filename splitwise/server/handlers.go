@@ -6,6 +6,9 @@ import (
 	"strconv"
 	"strings"
 	"text/template"
+	"time"
+
+	"github.com/vikesh-raj/go-practice/splitwise/models"
 )
 
 func (a *Application) handleError(w http.ResponseWriter) {
@@ -65,13 +68,44 @@ const viewHTML = `<!DOCTYPE html>
     .err {
         background-color: #FFCCCC;
     }
+	table,
+	th,
+	td {
+	  padding: 10px;
+	  border: 1px solid black;
+	  border-collapse: collapse;
+	}
 	</style>
 </head>
 <body>
 <div><a href="/?user={{.User}}">Home</a></div>
+{{if .Error}}
+<div class="err">{{.Error}}<br/></div><br/>
+{{end}}
 <h1>Statement</h1>
 {{if .User}}
-Fetching Statements
+	{{if .Ledger}}
+		<table>
+			<tr>
+	  			<th>No</th>
+	  			<th>To</th>
+	  			<th>Amount</th>
+				<th>Remarks</th>
+				<th>Date</th>
+			</tr>
+			{{range $index, $item := .Ledger}}
+				<tr>
+					<td>{{inc $index}}</td>
+					<td>{{$item.To}}</td>
+					<td>{{$item.Amount}}</td>
+					<td>{{$item.Remarks}}</td>
+					<td>{{printTime $item.Time}}</td>
+				</tr>
+			{{end}}
+		</table> 
+	{{else}}
+	<p>No transactions found
+	{{end}}
 {{else}}
 <div class="err"><a href="/">Please login</a></div>
 {{end}}
@@ -176,8 +210,21 @@ const settleHTML = `<!DOCTYPE html>
 </html>
 `
 
+func printTime(t time.Time) string {
+	return t.Format("Mon Jan 2 2006 03:04:05 pm")
+}
+
+func inc(i int) int {
+	return i + 1
+}
+
+var funcMap = template.FuncMap{
+	"printTime": printTime,
+	"inc":       inc,
+}
+
 func parseTemplate(page string) *template.Template {
-	return template.Must(template.New("").Parse(page))
+	return template.Must(template.New("").Funcs(funcMap).Parse(page))
 }
 
 var indexTemplate = parseTemplate(indexHTML)
@@ -205,12 +252,21 @@ func (a *Application) handleIndex(w http.ResponseWriter, r *http.Request) {
 var viewTemplate = parseTemplate(viewHTML)
 
 type viewPageParams struct {
-	User string
+	User   string
+	Error  string
+	Ledger []models.LedgerEntry
 }
 
 func (a *Application) handleView(w http.ResponseWriter, r *http.Request) {
+	user := r.URL.Query().Get("user")
 	viewPageParams := viewPageParams{
-		User: r.URL.Query().Get("user"),
+		User: user,
+	}
+	ledger, err := a.getLedger(user)
+	if err != nil {
+		viewPageParams.Error = "Error : " + err.Error()
+	} else {
+		viewPageParams.Ledger = ledger
 	}
 
 	viewTemplate.Execute(w, &viewPageParams)
@@ -227,20 +283,21 @@ type addPageParams struct {
 }
 
 func (a *Application) handleAdd(w http.ResponseWriter, r *http.Request) {
+	user := r.URL.Query().Get("user")
 	addPageParams := addPageParams{
-		User: r.URL.Query().Get("user"),
+		User: user,
 	}
 
 	addTemplate.Execute(w, &addPageParams)
 }
 
 func (a *Application) handleAddPost(w http.ResponseWriter, r *http.Request) {
-
+	user := r.URL.Query().Get("user")
 	addPageParams := addPageParams{
-		User: r.URL.Query().Get("user"),
+		User: user,
 	}
 
-	msg, err := a.handleAddPostRequest(r)
+	msg, err := a.handleAddPostRequest(user, r)
 	if err != nil {
 		addPageParams.Error = "Error : " + err.Error()
 	}
@@ -248,7 +305,7 @@ func (a *Application) handleAddPost(w http.ResponseWriter, r *http.Request) {
 	addTemplate.Execute(w, &addPageParams)
 }
 
-func (a *Application) handleAddPostRequest(r *http.Request) (string, error) {
+func (a *Application) handleAddPostRequest(user string, r *http.Request) (string, error) {
 	err := r.ParseForm()
 	if err != nil {
 		return "", err
@@ -291,8 +348,9 @@ func (a *Application) handleAddPostRequest(r *http.Request) (string, error) {
 			return "", fmt.Errorf("unable to parse total to number : %s", totalStr)
 		}
 
-		amount = (total * pct) / 100.0
-
+		userAmount := (total * pct) / 100.0
+		otherAmount := (total * (100 - pct)) / 100.0
+		amount = userAmount - otherAmount
 	} else {
 		amount, err = strconv.ParseFloat(strings.TrimSpace(amountStr), 64)
 		if err != nil {
@@ -300,10 +358,20 @@ func (a *Application) handleAddPostRequest(r *http.Request) (string, error) {
 		}
 	}
 
-	if amount > 0 {
-
+	transaction := models.Transaction{
+		From:    user,
+		To:      otherUser,
+		Remarks: r.PostForm.Get("remarks"),
+		Amount:  amount,
+		Time:    time.Now(),
 	}
-	return "Added successfully", nil
+
+	err = a.addTrasaction(transaction)
+	if err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("Added successfully amount : %.2f", amount), nil
 }
 
 var settleTemplate = parseTemplate(settleHTML)
@@ -327,11 +395,12 @@ func (a *Application) handleSettle(w http.ResponseWriter, r *http.Request) {
 
 func (a *Application) handleSettlePost(w http.ResponseWriter, r *http.Request) {
 
+	user := r.URL.Query().Get("user")
 	settlePageParams := settlePageParams{
-		User: r.URL.Query().Get("user"),
+		User: user,
 	}
 
-	msg, err := a.handleSettlePostRequest(&settlePageParams, r)
+	msg, err := a.handleSettlePostRequest(user, &settlePageParams, r)
 	if err != nil {
 		settlePageParams.Error = "Error : " + err.Error()
 	}
@@ -339,7 +408,7 @@ func (a *Application) handleSettlePost(w http.ResponseWriter, r *http.Request) {
 	settleTemplate.Execute(w, &settlePageParams)
 }
 
-func (a *Application) handleSettlePostRequest(sp *settlePageParams, r *http.Request) (string, error) {
+func (a *Application) handleSettlePostRequest(user string, sp *settlePageParams, r *http.Request) (string, error) {
 	err := r.ParseForm()
 	if err != nil {
 		return "", err
@@ -353,9 +422,32 @@ func (a *Application) handleSettlePostRequest(sp *settlePageParams, r *http.Requ
 
 	settle := r.PostForm.Get("settle")
 	if settle != "true" {
-		sp.SettleAmount = 25.0
+		amount, err := a.findSettlementAmount(user, otherUser)
+		if err != nil {
+			return "", err
+		}
+		if amount == 0 {
+			return "No Settlement amount.", nil
+		} else if amount > 0 {
+			return fmt.Sprintf("%s owes you %.2f", otherUser, amount), nil
+		}
+		sp.SettleAmount = amount
 	} else {
-		return "Settle Successful", nil
+
+		transaction := models.Transaction{
+			From:    user,
+			To:      otherUser,
+			Remarks: r.PostForm.Get("remarks"),
+			Amount:  sp.SettleAmount,
+			Time:    time.Now(),
+		}
+
+		err = a.addTrasaction(transaction)
+		if err != nil {
+			return "", err
+		}
+
+		return fmt.Sprintf("Settle Successful with amount : %.2f", sp.SettleAmount), nil
 	}
 	return "", nil
 }
