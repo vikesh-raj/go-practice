@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/gorilla/mux"
+	"github.com/vikesh-raj/go-practice/splitwise/providers"
 )
 
 // Application holds the application state
@@ -12,6 +13,7 @@ type Application struct {
 	Opts      Opts
 	lastError error
 	router    *mux.Router
+	provider  providers.DBProvider
 }
 
 // CreateApplication creates the application given the options
@@ -27,6 +29,8 @@ func CreateApplication(opts Opts) (*Application, error) {
 // Init initializes the application
 func (a *Application) Init() error {
 	a.addRoutes()
+
+	a.provider = providers.NewInMemoryDB()
 	return nil
 }
 

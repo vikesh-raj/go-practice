@@ -195,6 +195,7 @@ const settleHTML = `<!DOCTYPE html>
 	<input type="text" id="other_user" name="other_user" value="{{.OtherUser}}"><br><br>
 	{{if .SettleAmount}}
 		<input type="hidden" id="settle" name="settle" value="true">
+		<input type="hidden" id="amount" name="amount" value="{{.SettleAmount}}">
 		<label for="remarks">Remarks:</label>
 		<input type="text" id="remarks" name="remarks" value="{{.Remarks}}"><br><br>
 		<div>Settle Amount : {{.SettleAmount}} </div>
@@ -317,6 +318,10 @@ func (a *Application) handleAddPostRequest(user string, r *http.Request) (string
 		return "", fmt.Errorf("specify other user")
 	}
 
+	if otherUser == user {
+		return "", fmt.Errorf("same user")
+	}
+
 	amountStr := r.PostForm.Get("amount")
 	totalStr := r.PostForm.Get("total")
 	percentageStr := r.PostForm.Get("percentage")
@@ -418,6 +423,11 @@ func (a *Application) handleSettlePostRequest(user string, sp *settlePageParams,
 	if otherUser == "" {
 		return "", fmt.Errorf("specify other user")
 	}
+
+	if otherUser == user {
+		return "", fmt.Errorf("same user")
+	}
+
 	sp.OtherUser = otherUser
 
 	settle := r.PostForm.Get("settle")
@@ -434,11 +444,20 @@ func (a *Application) handleSettlePostRequest(user string, sp *settlePageParams,
 		sp.SettleAmount = amount
 	} else {
 
+		amountStr := r.PostForm.Get("amount")
+		amount, err := strconv.ParseFloat(strings.TrimSpace(amountStr), 64)
+		if err != nil {
+			return "", fmt.Errorf("unable to parse percentage to number : %s", amountStr)
+		}
+		if amount >= 0 {
+			return "", fmt.Errorf("unknown amount to settle : %.2f", amount)
+		}
+
 		transaction := models.Transaction{
 			From:    user,
 			To:      otherUser,
 			Remarks: r.PostForm.Get("remarks"),
-			Amount:  sp.SettleAmount,
+			Amount:  -amount,
 			Time:    time.Now(),
 		}
 
@@ -447,7 +466,7 @@ func (a *Application) handleSettlePostRequest(user string, sp *settlePageParams,
 			return "", err
 		}
 
-		return fmt.Sprintf("Settle Successful with amount : %.2f", sp.SettleAmount), nil
+		return fmt.Sprintf("Settle Successful with amount : %.2f", -amount), nil
 	}
 	return "", nil
 }

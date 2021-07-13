@@ -36,7 +36,7 @@ func GetOptsFromConfig(filename string) (Opts, error) {
 	}
 
 	cfg.Env()
-	fmt.Println(config.RenderYaml(cfg.Root))
+	// fmt.Println(config.RenderYaml(cfg.Root))
 
 	opts.Verbose = cfg.UBool("VERBOSE")
 	return opts, nil

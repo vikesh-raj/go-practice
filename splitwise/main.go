@@ -17,7 +17,7 @@ func run() error {
 
 	opts, err := server.GetOptsFromConfig(*config)
 	if err != nil {
-		return fmt.Errorf("Unable to read config : %v", err)
+		return fmt.Errorf("unable to read config : %v", err)
 	}
 	a, err := server.CreateApplication(opts)
 	if err != nil {
@@ -26,7 +26,7 @@ func run() error {
 
 	err = a.StartServer(*port)
 	if err != nil {
-		return fmt.Errorf("Unable to start server : %v", err)
+		return fmt.Errorf("unable to start server : %v", err)
 	}
 	return nil
 }
